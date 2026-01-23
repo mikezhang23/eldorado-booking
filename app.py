@@ -116,31 +116,26 @@ def get_secret(key, default=""):
 
 # Get all secrets at startup
 ANTHROPIC_API_KEY = get_secret("ANTHROPIC_API_KEY", "")
-EMAILJS_SERVICE_ID = get_secret("EMAILJS_SERVICE_ID", "")
-EMAILJS_TEMPLATE_ID = get_secret("EMAILJS_TEMPLATE_ID", "")
-EMAILJS_PUBLIC_KEY = get_secret("EMAILJS_PUBLIC_KEY", "")
+
+# Formspree Form ID
+FORMSPREE_FORM_ID = "xdaeeklk"
 
 def send_email_notification(form_data, analysis=None):
-    """Send email notification using EmailJS"""
-    
-    # Check if EmailJS is configured
-    if not all([EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY]):
-        return False, f"EmailJS not configured. Service: {bool(EMAILJS_SERVICE_ID)}, Template: {bool(EMAILJS_TEMPLATE_ID)}, Key: {bool(EMAILJS_PUBLIC_KEY)}"
+    """Send email notification using Formspree"""
     
     try:
         # Prepare email content
-        score_info = ""
+        score_info = "AI Analysis not available"
         if analysis and "error" not in analysis:
             score = analysis["qualification"]["score"]
             priority = analysis["qualification"]["priority"]
-            score_info = f"\n\n🎯 AI ANALYSIS:\nScore: {score}/10 ({priority.upper()})\n{analysis['qualification']['score_reasoning']}\n\nRecommended Property: {analysis['property_match']['best_fit']}"
+            score_info = f"Score: {score}/10 ({priority.upper()}) - {analysis['qualification']['score_reasoning']} | Recommended: {analysis['property_match']['best_fit']}"
         
-        template_params = {
-            "to_email": "eldoradohomerentals@gmail.com",
-            "from_name": form_data["name"],
+        # Formspree payload
+        payload = {
             "guest_name": form_data["name"],
             "guest_email": form_data["email"],
-            "guest_phone": form_data.get("phone", "Not provided"),
+            "guest_phone": form_data.get("phone", "Not provided") or "Not provided",
             "property": form_data["property"],
             "check_in": form_data["check_in"],
             "check_out": form_data["check_out"],
@@ -148,27 +143,23 @@ def send_email_notification(form_data, analysis=None):
             "guests": str(form_data["guests"]),
             "booking_type": form_data["booking_type"],
             "message": form_data.get("message", "None") or "None",
-            "score_info": score_info,
-            "submitted_at": form_data["submitted_at"]
+            "ai_analysis": score_info,
+            "submitted_at": form_data["submitted_at"],
+            "_subject": f"🏠 New Booking: {form_data['name']} - {form_data['nights']} nights"
         }
         
-        # Send via EmailJS REST API
+        # Send via Formspree
         response = requests.post(
-            "https://api.emailjs.com/api/v1.0/email/send",
-            json={
-                "service_id": EMAILJS_SERVICE_ID,
-                "template_id": EMAILJS_TEMPLATE_ID,
-                "user_id": EMAILJS_PUBLIC_KEY,
-                "template_params": template_params
-            },
-            headers={"Content-Type": "application/json"},
+            f"https://formspree.io/f/{FORMSPREE_FORM_ID}",
+            json=payload,
+            headers={"Accept": "application/json"},
             timeout=10
         )
         
         if response.status_code == 200:
-            return True, "Email sent"
+            return True, "Email sent via Formspree"
         else:
-            return False, f"EmailJS error ({response.status_code}): {response.text}"
+            return False, f"Formspree error ({response.status_code}): {response.text}"
             
     except requests.exceptions.Timeout:
         return False, "Email request timed out"
@@ -439,9 +430,7 @@ else:
         if is_host_mode:
             with st.expander("🔧 Debug Info"):
                 st.write(f"**Anthropic API Key:** {'✓ Configured' if ANTHROPIC_API_KEY else '✗ Missing'}")
-                st.write(f"**EmailJS Service ID:** {'✓ ' + EMAILJS_SERVICE_ID[:10] + '...' if EMAILJS_SERVICE_ID else '✗ Missing'}")
-                st.write(f"**EmailJS Template ID:** {'✓ ' + EMAILJS_TEMPLATE_ID if EMAILJS_TEMPLATE_ID else '✗ Missing'}")
-                st.write(f"**EmailJS Public Key:** {'✓ ' + EMAILJS_PUBLIC_KEY[:10] + '...' if EMAILJS_PUBLIC_KEY else '✗ Missing'}")
+                st.write(f"**Formspree Form ID:** ✓ {FORMSPREE_FORM_ID}")
         
         if analysis and "error" not in analysis:
             score = analysis["qualification"]["score"]
