@@ -107,17 +107,27 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Get secrets with proper error handling
+def get_secret(key, default=""):
+    try:
+        return st.secrets[key]
+    except (KeyError, FileNotFoundError):
+        return default
+
+# Get all secrets at startup
+ANTHROPIC_API_KEY = get_secret("ANTHROPIC_API_KEY", "")
+EMAILJS_SERVICE_ID = get_secret("EMAILJS_SERVICE_ID", "")
+EMAILJS_TEMPLATE_ID = get_secret("EMAILJS_TEMPLATE_ID", "")
+EMAILJS_PUBLIC_KEY = get_secret("EMAILJS_PUBLIC_KEY", "")
+
 def send_email_notification(form_data, analysis=None):
     """Send email notification using EmailJS"""
+    
+    # Check if EmailJS is configured
+    if not all([EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY]):
+        return False, f"EmailJS not configured. Service: {bool(EMAILJS_SERVICE_ID)}, Template: {bool(EMAILJS_TEMPLATE_ID)}, Key: {bool(EMAILJS_PUBLIC_KEY)}"
+    
     try:
-        # EmailJS configuration - you'll set these in Streamlit secrets
-        service_id = st.secrets.get("EMAILJS_SERVICE_ID", "")
-        template_id = st.secrets.get("EMAILJS_TEMPLATE_ID", "")
-        public_key = st.secrets.get("EMAILJS_PUBLIC_KEY", "")
-        
-        if not all([service_id, template_id, public_key]):
-            return False, "EmailJS not configured"
-        
         # Prepare email content
         score_info = ""
         if analysis and "error" not in analysis:
@@ -134,10 +144,10 @@ def send_email_notification(form_data, analysis=None):
             "property": form_data["property"],
             "check_in": form_data["check_in"],
             "check_out": form_data["check_out"],
-            "nights": form_data["nights"],
-            "guests": form_data["guests"],
+            "nights": str(form_data["nights"]),
+            "guests": str(form_data["guests"]),
             "booking_type": form_data["booking_type"],
-            "message": form_data.get("message", "None"),
+            "message": form_data.get("message", "None") or "None",
             "score_info": score_info,
             "submitted_at": form_data["submitted_at"]
         }
@@ -146,26 +156,32 @@ def send_email_notification(form_data, analysis=None):
         response = requests.post(
             "https://api.emailjs.com/api/v1.0/email/send",
             json={
-                "service_id": service_id,
-                "template_id": template_id,
-                "user_id": public_key,
+                "service_id": EMAILJS_SERVICE_ID,
+                "template_id": EMAILJS_TEMPLATE_ID,
+                "user_id": EMAILJS_PUBLIC_KEY,
                 "template_params": template_params
             },
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
+            timeout=10
         )
         
         if response.status_code == 200:
             return True, "Email sent"
         else:
-            return False, f"Email failed: {response.text}"
+            return False, f"EmailJS error ({response.status_code}): {response.text}"
             
+    except requests.exceptions.Timeout:
+        return False, "Email request timed out"
     except Exception as e:
-        return False, str(e)
+        return False, f"Email exception: {str(e)}"
 
-def analyze_guest(form_data, api_key):
+def analyze_guest(form_data):
     """Run AI analysis on the booking request"""
+    if not ANTHROPIC_API_KEY:
+        return {"error": "Anthropic API key not configured"}
+    
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         
         inquiry_text = f"""
 Guest Name: {form_data['name']}
@@ -246,15 +262,11 @@ if 'form_data' not in st.session_state:
     st.session_state.form_data = None
 if 'email_sent' not in st.session_state:
     st.session_state.email_sent = False
+if 'email_error' not in st.session_state:
+    st.session_state.email_error = ""
 
 # Check if host mode
 is_host_mode = query_params.get("host", "false").lower() == "true"
-
-# Try to get API key from secrets
-try:
-    api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
-except:
-    api_key = ""
 
 # Header
 st.markdown('<p class="main-header">🏠 Request a Booking</p>', unsafe_allow_html=True)
@@ -357,9 +369,9 @@ if not st.session_state.submitted:
                 }
                 
                 # Run AI analysis
-                if api_key:
+                if ANTHROPIC_API_KEY:
                     with st.spinner("Processing your request..."):
-                        st.session_state.analysis_result = analyze_guest(st.session_state.form_data, api_key)
+                        st.session_state.analysis_result = analyze_guest(st.session_state.form_data)
                 
                 # Send email notification
                 email_success, email_msg = send_email_notification(
@@ -367,6 +379,7 @@ if not st.session_state.submitted:
                     st.session_state.analysis_result
                 )
                 st.session_state.email_sent = email_success
+                st.session_state.email_error = email_msg
                 
                 st.session_state.submitted = True
                 st.rerun()
@@ -408,18 +421,27 @@ else:
         st.session_state.analysis_result = None
         st.session_state.form_data = None
         st.session_state.email_sent = False
+        st.session_state.email_error = ""
         st.rerun()
     
     # HOST DASHBOARD
-    if is_host_mode or api_key:
+    if is_host_mode or ANTHROPIC_API_KEY:
         st.markdown("---")
         st.markdown("### 🔒 Host Dashboard")
         
-        # Email notification status
+        # Email notification status with detailed error
         if st.session_state.email_sent:
             st.success("✓ Email notification sent to eldoradohomerentals@gmail.com")
         else:
-            st.warning("⚠️ Email notification not sent (check EmailJS configuration)")
+            st.warning(f"⚠️ Email notification not sent: {st.session_state.email_error}")
+        
+        # Debug info for host
+        if is_host_mode:
+            with st.expander("🔧 Debug Info"):
+                st.write(f"**Anthropic API Key:** {'✓ Configured' if ANTHROPIC_API_KEY else '✗ Missing'}")
+                st.write(f"**EmailJS Service ID:** {'✓ ' + EMAILJS_SERVICE_ID[:10] + '...' if EMAILJS_SERVICE_ID else '✗ Missing'}")
+                st.write(f"**EmailJS Template ID:** {'✓ ' + EMAILJS_TEMPLATE_ID if EMAILJS_TEMPLATE_ID else '✗ Missing'}")
+                st.write(f"**EmailJS Public Key:** {'✓ ' + EMAILJS_PUBLIC_KEY[:10] + '...' if EMAILJS_PUBLIC_KEY else '✗ Missing'}")
         
         if analysis and "error" not in analysis:
             score = analysis["qualification"]["score"]
@@ -491,14 +513,14 @@ else:
             st.markdown("---")
             if st.button("🔄 Re-analyze This Request", key="reanalyze"):
                 with st.spinner("Re-analyzing..."):
-                    st.session_state.analysis_result = analyze_guest(form_data, api_key)
+                    st.session_state.analysis_result = analyze_guest(form_data)
                 st.rerun()
         
         elif analysis and "error" in analysis:
             st.error(f"Analysis error: {analysis['error']}")
             if st.button("🔄 Retry Analysis", key="retry"):
                 with st.spinner("Retrying..."):
-                    st.session_state.analysis_result = analyze_guest(form_data, api_key)
+                    st.session_state.analysis_result = analyze_guest(form_data)
                 st.rerun()
         else:
             st.warning("AI analysis not available. Add ANTHROPIC_API_KEY to Streamlit secrets.")
