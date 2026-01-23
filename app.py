@@ -124,28 +124,63 @@ def send_email_notification(form_data, analysis=None):
     """Send email notification using Formspree"""
     
     try:
-        # Prepare email content
-        score_info = "AI Analysis not available"
-        if analysis and "error" not in analysis:
-            score = analysis["qualification"]["score"]
-            priority = analysis["qualification"]["priority"]
-            score_info = f"Score: {score}/10 ({priority.upper()}) - {analysis['qualification']['score_reasoning']} | Recommended: {analysis['property_match']['best_fit']}"
+        # Prepare full AI analysis content
+        ai_score = "N/A"
+        ai_priority = "N/A"
+        ai_reasoning = "AI Analysis not available"
+        ai_property = "N/A"
+        ai_property_reason = "N/A"
+        ai_positive_signals = "None"
+        ai_risk_signals = "None"
+        ai_respond_within = "24 hours"
+        ai_tone = "Professional"
+        ai_draft_response = "No draft available"
         
-        # Formspree payload
+        if analysis and "error" not in analysis:
+            ai_score = f"{analysis['qualification']['score']}/10"
+            ai_priority = analysis["qualification"]["priority"].upper()
+            ai_reasoning = analysis["qualification"]["score_reasoning"]
+            ai_property = analysis["property_match"]["best_fit"]
+            ai_property_reason = analysis["property_match"]["match_reasoning"]
+            ai_positive_signals = ", ".join(analysis["guest_profile"]["positive_signals"]) or "None identified"
+            ai_risk_signals = ", ".join(analysis["guest_profile"]["risk_signals"]) or "None identified"
+            ai_respond_within = analysis["response_strategy"]["respond_within"]
+            ai_tone = analysis["response_strategy"]["tone"]
+            ai_draft_response = analysis["draft_response"]
+        
+        # Formspree payload with full details
         payload = {
-            "guest_name": form_data["name"],
-            "guest_email": form_data["email"],
-            "guest_phone": form_data.get("phone", "Not provided") or "Not provided",
-            "property": form_data["property"],
-            "check_in": form_data["check_in"],
-            "check_out": form_data["check_out"],
-            "nights": str(form_data["nights"]),
-            "guests": str(form_data["guests"]),
-            "booking_type": form_data["booking_type"],
-            "message": form_data.get("message", "None") or "None",
-            "ai_analysis": score_info,
-            "submitted_at": form_data["submitted_at"],
-            "_subject": f"🏠 New Booking: {form_data['name']} - {form_data['nights']} nights"
+            "_subject": f"🏠 New Booking: {form_data['name']} - {form_data['nights']} nights ({ai_priority})",
+            
+            # Guest Info
+            "1_guest_name": form_data["name"],
+            "2_guest_email": form_data["email"],
+            "3_guest_phone": form_data.get("phone", "Not provided") or "Not provided",
+            
+            # Booking Details
+            "4_property": form_data["property"],
+            "5_check_in": form_data["check_in"],
+            "6_check_out": form_data["check_out"],
+            "7_nights": str(form_data["nights"]),
+            "8_guests": str(form_data["guests"]),
+            "9_booking_type": form_data["booking_type"],
+            "10_message": form_data.get("message", "None") or "None",
+            
+            # AI Analysis
+            "11_AI_SCORE": ai_score,
+            "12_AI_PRIORITY": ai_priority,
+            "13_AI_REASONING": ai_reasoning,
+            "14_AI_RECOMMENDED_PROPERTY": ai_property,
+            "15_AI_PROPERTY_REASON": ai_property_reason,
+            "16_AI_POSITIVE_SIGNALS": ai_positive_signals,
+            "17_AI_RISK_SIGNALS": ai_risk_signals,
+            "18_AI_RESPOND_WITHIN": ai_respond_within,
+            "19_AI_SUGGESTED_TONE": ai_tone,
+            "20_AI_DRAFT_RESPONSE": ai_draft_response,
+            
+            # Meta
+            "21_submitted_at": form_data["submitted_at"],
+            "22_dashboard_link": "https://eldorado-booking.streamlit.app/?host=true"
         }
         
         # Send via Formspree
