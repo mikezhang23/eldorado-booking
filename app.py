@@ -36,8 +36,8 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
     
     .main-header {
-        font-family: 'Playfair Display', serif;
-        font-size: 2.2rem;
+        font-family: 'Inter', sans-serif;
+        font-size: 3rem;
         font-weight: 600;
         text-align: center;
         margin-bottom: 0.5rem;
