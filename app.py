@@ -110,7 +110,7 @@ st.markdown("""
 def send_email_notification(form_data, analysis=None):
     """Send email notification using Formspree"""
     try:
-        formspree_id = st.secrets.get("xdaeeklk", "")
+        formspree_id = st.secrets.get("FORMSPREE_ID", "")
 
         if not formspree_id:
             return False, "Formspree not configured - add FORMSPREE_ID to Streamlit secrets"
