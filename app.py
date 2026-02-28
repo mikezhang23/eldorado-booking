@@ -25,6 +25,14 @@ query_params = st.query_params
 # Custom CSS matching Eldorado brand
 st.markdown("""
 <style>
+    .stApp {
+        background-color: #f7f5f0;
+    }
+    [data-testid="stForm"] {
+        background-color: #ffffff;
+        border-radius: 12px;
+        padding: 1.5rem;
+    }
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
     
     .main-header {
