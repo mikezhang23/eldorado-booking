@@ -117,12 +117,17 @@ def send_email_notification(form_data, analysis=None):
 
         # Build AI analysis summary if available
         score_info = "Not available"
+        draft_response = "Not available"
+        property_recommendation = "Not available"
         if analysis and "error" not in analysis:
             score = analysis["qualification"]["score"]
             priority = analysis["qualification"]["priority"]
             best_fit = analysis["property_match"]["best_fit"]
             reasoning = analysis["qualification"]["score_reasoning"]
-            score_info = f"Score: {score}/10 ({priority.upper()}) | {reasoning} | Recommended: {best_fit}"mmended: {best_fit}"
+            match_reasoning = analysis["property_match"]["match_reasoning"]
+            score_info = f"Score: {score}/10 ({priority.upper()}) | {reasoning}"
+            property_recommendation = f"{best_fit} - {match_reasoning}"
+            draft_response = analysis.get("draft_response", "Not available")
 
         payload = {
             "email": form_data["email"],
@@ -138,7 +143,9 @@ def send_email_notification(form_data, analysis=None):
             "Guests": str(form_data["guests"]),
             "Booking Type": form_data["booking_type"],
             "Message": form_data.get("message", "None"),
-            "AI Analysis": score_info,
+            "AI Score": score_info,
+            "Property Recommendation": property_recommendation,
+            "Draft Response": draft_response,
             "Submitted At": form_data["submitted_at"],
         }
 
