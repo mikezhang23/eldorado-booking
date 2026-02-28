@@ -26,7 +26,7 @@ query_params = st.query_params
 st.markdown("""
 <style>
     .stApp {
-        background-color: #f7f5f0;
+        background-color: transparent;
     }
     [data-testid="stForm"] {
         background-color: #ffffff;
