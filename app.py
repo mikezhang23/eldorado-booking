@@ -1,7 +1,7 @@
 """
 Eldorado Home Rentals - Booking Request Assistant
 Hybrid: Customer-facing form + AI-powered screening for host
-With email notifications via EmailJS
+With email notifications via Formspree
 """
 
 import streamlit as st
@@ -87,7 +87,6 @@ st.markdown("""
         display: none;
     }
     
-    /* Fix button styling */
     .action-button {
         display: inline-block;
         background-color: #1a1a1a;
@@ -107,108 +106,62 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Get secrets with proper error handling
-def get_secret(key, default=""):
-    try:
-        return st.secrets[key]
-    except (KeyError, FileNotFoundError):
-        return default
-
-# Get all secrets at startup
-ANTHROPIC_API_KEY = get_secret("ANTHROPIC_API_KEY", "")
-
-# Formspree Form ID
-FORMSPREE_FORM_ID = "xdaeeklk"
 
 def send_email_notification(form_data, analysis=None):
     """Send email notification using Formspree"""
-    
     try:
-        # Prepare full AI analysis content
-        ai_score = "N/A"
-        ai_priority = "N/A"
-        ai_reasoning = "AI Analysis not available"
-        ai_property = "N/A"
-        ai_property_reason = "N/A"
-        ai_positive_signals = "None"
-        ai_risk_signals = "None"
-        ai_respond_within = "24 hours"
-        ai_tone = "Professional"
-        ai_draft_response = "No draft available"
-        
+        formspree_id = st.secrets.get("https://formspree.io/f/xdaeeklk", "")
+
+        if not formspree_id:
+            return False, "Formspree not configured - add FORMSPREE_ID to Streamlit secrets"
+
+        # Build AI analysis summary if available
+        score_info = "Not available"
         if analysis and "error" not in analysis:
-            ai_score = f"{analysis['qualification']['score']}/10"
-            ai_priority = analysis["qualification"]["priority"].upper()
-            ai_reasoning = analysis["qualification"]["score_reasoning"]
-            ai_property = analysis["property_match"]["best_fit"]
-            ai_property_reason = analysis["property_match"]["match_reasoning"]
-            ai_positive_signals = ", ".join(analysis["guest_profile"]["positive_signals"]) or "None identified"
-            ai_risk_signals = ", ".join(analysis["guest_profile"]["risk_signals"]) or "None identified"
-            ai_respond_within = analysis["response_strategy"]["respond_within"]
-            ai_tone = analysis["response_strategy"]["tone"]
-            ai_draft_response = analysis["draft_response"]
-        
-        # Formspree payload with full details
+            score = analysis["qualification"]["score"]
+            priority = analysis["qualification"]["priority"]
+            best_fit = analysis["property_match"]["best_fit"]
+            reasoning = analysis["qualification"]["score_reasoning"]
+            score_info = f"Score: {score}/10 ({priority.upper()}) | {reasoning} | Recommended: {best_fit}"
+
         payload = {
-            "_subject": f"🏠 New Booking: {form_data['name']} - {form_data['nights']} nights ({ai_priority})",
-            
-            # Guest Info
-            "1_guest_name": form_data["name"],
-            "2_guest_email": form_data["email"],
-            "3_guest_phone": form_data.get("phone", "Not provided") or "Not provided",
-            
-            # Booking Details
-            "4_property": form_data["property"],
-            "5_check_in": form_data["check_in"],
-            "6_check_out": form_data["check_out"],
-            "7_nights": str(form_data["nights"]),
-            "8_guests": str(form_data["guests"]),
-            "9_booking_type": form_data["booking_type"],
-            "10_message": form_data.get("message", "None") or "None",
-            
-            # AI Analysis
-            "11_AI_SCORE": ai_score,
-            "12_AI_PRIORITY": ai_priority,
-            "13_AI_REASONING": ai_reasoning,
-            "14_AI_RECOMMENDED_PROPERTY": ai_property,
-            "15_AI_PROPERTY_REASON": ai_property_reason,
-            "16_AI_POSITIVE_SIGNALS": ai_positive_signals,
-            "17_AI_RISK_SIGNALS": ai_risk_signals,
-            "18_AI_RESPOND_WITHIN": ai_respond_within,
-            "19_AI_SUGGESTED_TONE": ai_tone,
-            "20_AI_DRAFT_RESPONSE": ai_draft_response,
-            
-            # Meta
-            "21_submitted_at": form_data["submitted_at"],
-            "22_dashboard_link": "https://eldorado-booking.streamlit.app/?host=true"
+            "email": form_data["email"],
+            "_subject": f"New Booking Request: {form_data['name']} - {form_data['property']}",
+            "Name": form_data["name"],
+            "Email": form_data["email"],
+            "Phone": form_data.get("phone", "Not provided"),
+            "Company": form_data.get("company", "Not provided"),
+            "Property": form_data["property"],
+            "Check-in": form_data["check_in"],
+            "Check-out": form_data["check_out"],
+            "Nights": str(form_data["nights"]),
+            "Guests": str(form_data["guests"]),
+            "Booking Type": form_data["booking_type"],
+            "Message": form_data.get("message", "None"),
+            "AI Analysis": score_info,
+            "Submitted At": form_data["submitted_at"],
         }
-        
-        # Send via Formspree
+
         response = requests.post(
-            f"https://formspree.io/f/{FORMSPREE_FORM_ID}",
+            f"https://formspree.io/f/{formspree_id}",
             json=payload,
             headers={"Accept": "application/json"},
-            timeout=10
         )
-        
+
         if response.status_code == 200:
             return True, "Email sent via Formspree"
         else:
-            return False, f"Formspree error ({response.status_code}): {response.text}"
-            
-    except requests.exceptions.Timeout:
-        return False, "Email request timed out"
-    except Exception as e:
-        return False, f"Email exception: {str(e)}"
+            return False, f"Formspree error {response.status_code}: {response.text}"
 
-def analyze_guest(form_data):
+    except Exception as e:
+        return False, f"Exception: {str(e)}"
+
+
+def analyze_guest(form_data, api_key):
     """Run AI analysis on the booking request"""
-    if not ANTHROPIC_API_KEY:
-        return {"error": "Anthropic API key not configured"}
-    
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        
+        client = anthropic.Anthropic(api_key=api_key)
+
         inquiry_text = f"""
 Guest Name: {form_data['name']}
 Email: {form_data['email']}
@@ -222,7 +175,7 @@ Number of Guests: {form_data['guests']}
 Booking Type: {form_data['booking_type']}
 Additional Message: {form_data.get('message', 'None provided')}
 """
-        
+
         system_prompt = """You are a guest screening assistant for Eldorado Home Rentals, a premium mid-term rental company in Las Vegas with three properties:
 
 1. **Eldorado Ln** - Single story resort-style home with pool, beautiful white kitchen, expansive backyard. Best for families and photo shoots.
@@ -264,87 +217,114 @@ Scoring: 9-10 (long stays, corporate, photo shoots), 7-8 (2+ weeks, professional
             model="claude-sonnet-4-20250514",
             max_tokens=1500,
             system=system_prompt,
-            messages=[{"role": "user", "content": f"Analyze this booking request:\n\n{inquiry_text}"}]
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Analyze this booking request:\n\n{inquiry_text}",
+                }
+            ],
         )
-        
+
         response_text = message_response.content[0].text
-        
+
         if "```json" in response_text:
             response_text = response_text.split("```json")[1].split("```")[0]
         elif "```" in response_text:
             response_text = response_text.split("```")[1].split("```")[0]
-        
+
         return json.loads(response_text.strip())
-        
+
     except Exception as e:
         return {"error": str(e)}
 
-# Initialize session state
-if 'submitted' not in st.session_state:
+
+# ---------------------------------------------------------------------------
+# Session state
+# ---------------------------------------------------------------------------
+if "submitted" not in st.session_state:
     st.session_state.submitted = False
-if 'analysis_result' not in st.session_state:
+if "analysis_result" not in st.session_state:
     st.session_state.analysis_result = None
-if 'form_data' not in st.session_state:
+if "form_data" not in st.session_state:
     st.session_state.form_data = None
-if 'email_sent' not in st.session_state:
+if "email_sent" not in st.session_state:
     st.session_state.email_sent = False
-if 'email_error' not in st.session_state:
-    st.session_state.email_error = ""
+if "email_debug" not in st.session_state:
+    st.session_state.email_debug = ""
 
 # Check if host mode
 is_host_mode = query_params.get("host", "false").lower() == "true"
 
-# Header
-st.markdown('<p class="main-header">🏠 Request a Booking</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Fill out the form below and we\'ll get back to you within 24 hours</p>', unsafe_allow_html=True)
+# Try to get API key from secrets
+try:
+    api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+except Exception:
+    api_key = ""
 
+# ---------------------------------------------------------------------------
+# Header
+# ---------------------------------------------------------------------------
+st.markdown(
+    '<p class="main-header">🏠 Request a Booking</p>', unsafe_allow_html=True
+)
+st.markdown(
+    '<p class="sub-header">Fill out the form below and we\'ll get back to you within 24 hours</p>',
+    unsafe_allow_html=True,
+)
+
+# ---------------------------------------------------------------------------
 # FORM VIEW
+# ---------------------------------------------------------------------------
 if not st.session_state.submitted:
-    
+
     with st.form("booking_form"):
         st.subheader("📋 Your Information")
-        
+
         col1, col2 = st.columns(2)
         with col1:
             name = st.text_input("Full Name *", placeholder="John Smith")
         with col2:
             email = st.text_input("Email Address *", placeholder="john@email.com")
-        
+
         col3, col4 = st.columns(2)
         with col3:
             phone = st.text_input("Phone Number", placeholder="(555) 123-4567")
         with col4:
-            company = st.text_input("Company (if applicable)", placeholder="Company name")
-        
+            company = st.text_input(
+                "Company (if applicable)", placeholder="Company name"
+            )
+
         st.subheader("🏡 Booking Details")
-        
+
         property_choice = st.selectbox(
             "Which property are you interested in? *",
             [
                 "Not sure yet - help me choose",
                 "Eldorado Ln - Resort-style with pool",
                 "Katie Ave - Modern smart home",
-                "Runestone St - Japanese wabi-sabi style"
-            ]
+                "Runestone St - Japanese wabi-sabi style",
+            ],
         )
-        
+
         col5, col6 = st.columns(2)
         with col5:
             check_in = st.date_input(
                 "Check-in Date *",
                 min_value=date.today(),
-                value=date.today() + timedelta(days=7)
+                value=date.today() + timedelta(days=7),
             )
         with col6:
             check_out = st.date_input(
                 "Check-out Date *",
                 min_value=date.today() + timedelta(days=1),
-                value=date.today() + timedelta(days=14)
+                value=date.today() + timedelta(days=14),
             )
-        
+
         col7, col8 = st.columns(2)
         with col7:
-            guests = st.number_input("Number of Guests *", min_value=1, max_value=16, value=2)
+            guests = st.number_input(
+                "Number of Guests *", min_value=1, max_value=16, value=2
+            )
         with col8:
             booking_type = st.selectbox(
                 "Booking Type *",
@@ -354,27 +334,29 @@ if not st.session_state.submitted:
                     "Relocation / Extended Stay",
                     "Photo / Video Shoot",
                     "Event / Gathering",
-                    "Other"
-                ]
+                    "Other",
+                ],
             )
-        
+
         st.subheader("💬 Tell Us More")
-        
+
         message = st.text_area(
             "Additional details about your stay",
             placeholder="Tell us about your trip! What brings you to Las Vegas? Any special requests or questions?",
-            height=120
+            height=120,
         )
-        
+
         agree = st.checkbox("I agree to be contacted about my booking request")
-        
+
         submitted = st.form_submit_button("Submit Booking Request", type="primary")
-        
+
         if submitted:
             if not name or not email:
                 st.error("Please fill out all required fields (Name and Email)")
             elif not agree:
-                st.error("Please agree to be contacted about your booking request")
+                st.error(
+                    "Please agree to be contacted about your booking request"
+                )
             elif check_out <= check_in:
                 st.error("Check-out date must be after check-in date")
             else:
@@ -391,40 +373,47 @@ if not st.session_state.submitted:
                     "guests": guests,
                     "booking_type": booking_type,
                     "message": message,
-                    "submitted_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    "submitted_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 }
-                
+
                 # Run AI analysis
-                if ANTHROPIC_API_KEY:
+                if api_key:
                     with st.spinner("Processing your request..."):
-                        st.session_state.analysis_result = analyze_guest(st.session_state.form_data)
-                
-                # Send email notification
+                        st.session_state.analysis_result = analyze_guest(
+                            st.session_state.form_data, api_key
+                        )
+
+                # Send email notification via Formspree
                 email_success, email_msg = send_email_notification(
-                    st.session_state.form_data, 
-                    st.session_state.analysis_result
+                    st.session_state.form_data,
+                    st.session_state.analysis_result,
                 )
                 st.session_state.email_sent = email_success
-                st.session_state.email_error = email_msg
-                
+                st.session_state.email_debug = email_msg
+
                 st.session_state.submitted = True
                 st.rerun()
 
+# ---------------------------------------------------------------------------
 # CONFIRMATION VIEW
+# ---------------------------------------------------------------------------
 else:
     form_data = st.session_state.form_data
     analysis = st.session_state.analysis_result
-    
+
     # Guest confirmation
-    st.markdown("""
+    st.markdown(
+        """
     <div class="success-box">
         <h2 style="margin:0;color:#155724;">✓ Request Received!</h2>
         <p style="margin:1rem 0 0 0;color:#155724;">Thank you for your booking request. We'll review your information and get back to you within 24 hours.</p>
     </div>
-    """, unsafe_allow_html=True)
-    
+    """,
+        unsafe_allow_html=True,
+    )
+
     st.subheader("📋 Your Request Summary")
-    
+
     col1, col2 = st.columns(2)
     with col1:
         st.write(f"**Name:** {form_data['name']}")
@@ -432,45 +421,47 @@ else:
         st.write(f"**Phone:** {form_data['phone'] or 'Not provided'}")
     with col2:
         st.write(f"**Property:** {form_data['property']}")
-        st.write(f"**Dates:** {form_data['check_in']} → {form_data['check_out']} ({form_data['nights']} nights)")
-        st.write(f"**Guests:** {form_data['guests']} | **Type:** {form_data['booking_type']}")
-    
-    if form_data.get('message'):
+        st.write(
+            f"**Dates:** {form_data['check_in']} → {form_data['check_out']} ({form_data['nights']} nights)"
+        )
+        st.write(
+            f"**Guests:** {form_data['guests']} | **Type:** {form_data['booking_type']}"
+        )
+
+    if form_data.get("message"):
         st.write(f"**Message:** {form_data['message']}")
-    
+
     st.markdown("---")
     st.markdown("Questions? Email us at **eldoradohomerentals@gmail.com**")
-    
+
     # New request button
     if st.button("Submit Another Request", key="new_request"):
         st.session_state.submitted = False
         st.session_state.analysis_result = None
         st.session_state.form_data = None
         st.session_state.email_sent = False
-        st.session_state.email_error = ""
+        st.session_state.email_debug = ""
         st.rerun()
-    
+
+    # ------------------------------------------------------------------
     # HOST DASHBOARD
-    if is_host_mode or ANTHROPIC_API_KEY:
+    # ------------------------------------------------------------------
+    if is_host_mode or api_key:
         st.markdown("---")
         st.markdown("### 🔒 Host Dashboard")
-        
-        # Email notification status with detailed error
+
+        # Email notification status
         if st.session_state.email_sent:
-            st.success("✓ Email notification sent to eldoradohomerentals@gmail.com")
+            st.success("✓ Email notification sent via Formspree")
         else:
-            st.warning(f"⚠️ Email notification not sent: {st.session_state.email_error}")
-        
-        # Debug info for host
-        if is_host_mode:
-            with st.expander("🔧 Debug Info"):
-                st.write(f"**Anthropic API Key:** {'✓ Configured' if ANTHROPIC_API_KEY else '✗ Missing'}")
-                st.write(f"**Formspree Form ID:** ✓ {FORMSPREE_FORM_ID}")
-        
+            st.warning("⚠️ Email notification not sent")
+            if st.session_state.email_debug:
+                st.code(st.session_state.email_debug)
+
         if analysis and "error" not in analysis:
             score = analysis["qualification"]["score"]
             priority = analysis["qualification"]["priority"]
-            
+
             # Score display
             if score >= 7:
                 score_class = "score-high"
@@ -478,15 +469,22 @@ else:
                 score_class = "score-medium"
             else:
                 score_class = "score-low"
-            
-            st.markdown(f'<div class="{score_class}"><strong>Guest Score: {score}/10</strong> | Priority: {priority.upper()} | Respond: {analysis["response_strategy"]["respond_within"]}</div>', unsafe_allow_html=True)
-            
-            st.write(f"**Assessment:** {analysis['qualification']['score_reasoning']}")
-            
+
+            st.markdown(
+                f'<div class="{score_class}"><strong>Guest Score: {score}/10</strong> | Priority: {priority.upper()} | Respond: {analysis["response_strategy"]["respond_within"]}</div>',
+                unsafe_allow_html=True,
+            )
+
+            st.write(
+                f"**Assessment:** {analysis['qualification']['score_reasoning']}"
+            )
+
             # Property match
             st.subheader("🏡 Property Recommendation")
-            st.success(f"**{analysis['property_match']['best_fit']}** — {analysis['property_match']['match_reasoning']}")
-            
+            st.success(
+                f"**{analysis['property_match']['best_fit']}** — {analysis['property_match']['match_reasoning']}"
+            )
+
             # Signals
             col_a, col_b = st.columns(2)
             with col_a:
@@ -501,58 +499,80 @@ else:
                     st.write(f"• {signal}")
                 if not analysis["guest_profile"]["risk_signals"]:
                     st.write("• None identified")
-            
+
             # Draft response
             st.subheader("✉️ Draft Response")
-            st.info(f"**Suggested tone:** {analysis['response_strategy']['tone']}")
-            
+            st.info(
+                f"**Suggested tone:** {analysis['response_strategy']['tone']}"
+            )
+
             draft = analysis["draft_response"]
-            response_text = st.text_area("Edit and copy:", value=draft, height=150, key="draft_response")
-            
+            response_text = st.text_area(
+                "Edit and copy:",
+                value=draft,
+                height=150,
+                key="draft_response",
+            )
+
             # Action buttons
             st.subheader("⚡ Quick Actions")
-            
+
             col1, col2 = st.columns(2)
-            
+
             with col1:
-                # Create mailto link
-                subject = urllib.parse.quote("Re: Your Eldorado Home Rentals Booking Request")
+                subject = urllib.parse.quote(
+                    "Re: Your Eldorado Home Rentals Booking Request"
+                )
                 body = urllib.parse.quote(response_text)
-                mailto_link = f"mailto:{form_data['email']}?subject={subject}&body={body}"
-                
-                st.markdown(f'<a href="{mailto_link}" class="action-button" target="_blank">📧 Open in Email Client</a>', unsafe_allow_html=True)
-            
+                mailto_link = (
+                    f"mailto:{form_data['email']}?subject={subject}&body={body}"
+                )
+                st.markdown(
+                    f'<a href="{mailto_link}" class="action-button" target="_blank">📧 Open in Email Client</a>',
+                    unsafe_allow_html=True,
+                )
+
             with col2:
-                # Download JSON
-                json_data = json.dumps({**form_data, "analysis": analysis}, indent=2)
+                json_data = json.dumps(
+                    {**form_data, "analysis": analysis}, indent=2
+                )
                 st.download_button(
                     label="📥 Download JSON",
                     data=json_data,
                     file_name=f"booking_{form_data['name'].replace(' ', '_')}_{form_data['check_in']}.json",
                     mime="application/json",
-                    key="download_json"
+                    key="download_json",
                 )
-            
+
             # Re-analyze button
             st.markdown("---")
             if st.button("🔄 Re-analyze This Request", key="reanalyze"):
                 with st.spinner("Re-analyzing..."):
-                    st.session_state.analysis_result = analyze_guest(form_data)
+                    st.session_state.analysis_result = analyze_guest(
+                        form_data, api_key
+                    )
                 st.rerun()
-        
+
         elif analysis and "error" in analysis:
             st.error(f"Analysis error: {analysis['error']}")
             if st.button("🔄 Retry Analysis", key="retry"):
                 with st.spinner("Retrying..."):
-                    st.session_state.analysis_result = analyze_guest(form_data)
+                    st.session_state.analysis_result = analyze_guest(
+                        form_data, api_key
+                    )
                 st.rerun()
         else:
-            st.warning("AI analysis not available. Add ANTHROPIC_API_KEY to Streamlit secrets.")
+            st.warning(
+                "AI analysis not available. Add ANTHROPIC_API_KEY to Streamlit secrets."
+            )
             st.json(form_data)
 
 # Footer
-st.markdown("""
+st.markdown(
+    """
 <div style="text-align:center;color:#999;font-size:0.8rem;margin-top:3rem;padding-bottom:1rem;">
     Eldorado Home Rentals | Las Vegas, NV | eldoradohomerentals@gmail.com
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
