@@ -122,7 +122,7 @@ def send_email_notification(form_data, analysis=None):
             priority = analysis["qualification"]["priority"]
             best_fit = analysis["property_match"]["best_fit"]
             reasoning = analysis["qualification"]["score_reasoning"]
-            score_info = f"Score: {score}/10 ({priority.upper()}) | {reasoning} | Recommended: {best_fit}"
+            score_info = f"Score: {score}/10 ({priority.upper()}) | {reasoning} | Recommended: {best_fit}"mmended: {best_fit}"
 
         payload = {
             "email": form_data["email"],
