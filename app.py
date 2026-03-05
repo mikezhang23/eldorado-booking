@@ -119,7 +119,9 @@ st.markdown("""
 def send_email_notification(form_data, analysis=None):
     """Send email notification using Formspree"""
     try:
-        formspree_id = st.secrets.get("FORMSPREE_ID", "") if hasattr(st, "secrets") and "FORMSPREE_ID" in st.secrets else os.environ.get("FORMSPREE_ID", "")
+        formspree_id = st.secrets["FORMSPREE_ID"]
+    except Exception:
+        formspree_id = os.environ.get("FORMSPREE_ID", "")
 
         if not formspree_id:
             return False, "Formspree not configured - add FORMSPREE_ID to Streamlit secrets"
@@ -273,7 +275,9 @@ is_host_mode = query_params.get("host", "false").lower() == "true"
 
 # Try to get API key from secrets
 try:
-    api_key = st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") and "ANTHROPIC_API_KEY" in st.secrets else os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = st.secrets["ANTHROPIC_API_KEY"]
+except Exception:
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 except Exception:
     api_key = ""
 
